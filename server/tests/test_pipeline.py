@@ -319,3 +319,27 @@ async def test_label_speaker_rebroadcasts(
     # At least one segment should have speaker_name "Alice"
     alice_segments = [s for s in segments if s.get("speaker_name") == "Alice"]
     assert len(alice_segments) > 0
+
+
+@pytest.mark.asyncio
+async def test_stop_triggers_final_diarization(
+    pipeline_with_diarizer, mock_ws_server, mock_diarizer
+):
+    """'stop' command runs a final diarization pass before stopping."""
+    chunk = np.zeros(16000 * 30, dtype=np.float32)
+
+    # Process 1 chunk — not enough to trigger periodic diarization (interval=3)
+    await pipeline_with_diarizer._process_chunk(chunk)
+    mock_diarizer.run_diarization.assert_not_awaited()
+
+    # Stop should trigger final diarization
+    await pipeline_with_diarizer.handle_command({"type": "stop"})
+    mock_diarizer.run_diarization.assert_awaited_once()
+
+    # Should have broadcast a diarization_update
+    diarization_calls = [
+        call
+        for call in mock_ws_server.broadcast.call_args_list
+        if call[0][0].type == WS_MSG_DIARIZATION_UPDATE
+    ]
+    assert len(diarization_calls) == 1

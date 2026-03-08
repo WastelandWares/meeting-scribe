@@ -160,6 +160,9 @@ class Pipeline:
 
         elif cmd_type == "stop":
             await self._audio_capture.stop()
+            # Run final diarization so the transcript gets speaker labels
+            if self._diarizer is not None and self._diarizer._chunks:
+                await self._run_diarization()
             self._state = ServerState.STOPPED
             await self._broadcast_status()
 
