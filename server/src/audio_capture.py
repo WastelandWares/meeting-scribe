@@ -72,8 +72,6 @@ class AudioCapture:
         self._paused = False
         self._buffer = []
         self._buffer_samples = 0
-        # Fresh queue for new recording session
-        self._queue = asyncio.Queue()
 
         self._stream = sd.InputStream(
             samplerate=self.sample_rate,
@@ -86,6 +84,7 @@ class AudioCapture:
 
     async def stop(self) -> None:
         """Stop and close the audio stream."""
+        was_running = self._stream is not None
         if self._stream is not None:
             self._stream.stop()
             self._stream.close()
@@ -93,7 +92,8 @@ class AudioCapture:
         self._buffer = []
         self._buffer_samples = 0
         # Put sentinel to unblock chunks() generator
-        self._queue.put_nowait(None)
+        if was_running:
+            self._queue.put_nowait(None)
 
     async def pause(self) -> None:
         """Pause chunk emission; audio callbacks are silently dropped."""
