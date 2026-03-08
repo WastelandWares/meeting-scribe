@@ -1,0 +1,28 @@
+/* Speaker colors - 6-color rotating palette */
+.speaker-0 { color: #4A9EFF; }
+.speaker-1 { color: #FF6B6B; }
+.speaker-2 { color: #51CF66; }
+.speaker-3 { color: #FFA94D; }
+.speaker-4 { color: #CC5DE8; }
+.speaker-5 { color: #20C997; }
+
+/* Timestamp styling */
+.meeting-scribe-timestamp { opacity: 0.6; font-size: 0.85em; margin-right: 0.5em; }
+
+/* Diarization flash animation */
+.meeting-scribe-flash { animation: scribe-flash 0.5s ease-out; }
+@keyframes scribe-flash { from { background-color: rgba(255, 255, 100, 0.15); } to { background-color: transparent; } }
+
+/* Connection status indicator */
+.meeting-scribe-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.meeting-scribe-status.connected { background: #51CF66; }
+.meeting-scribe-status.connecting { background: #FFA94D; }
+.meeting-scribe-status.disconnected { background: #FF6B6B; }
+
+/* Inline label input */
+.meeting-scribe-label-input { border: 1px solid var(--interactive-accent); border-radius: 3px; padding: 1px 4px; font-size: 0.9em; }
+
+/* View layout */
+.meeting-scribe-header { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--background-modifier-border); }
+.meeting-scribe-segments { padding: 8px; overflow-y: auto; }
+.meeting-scribe-segment { margin-bottom: 4px; }
