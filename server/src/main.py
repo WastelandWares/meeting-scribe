@@ -49,6 +49,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Audio input device index (default: system default)",
     )
+    parser.add_argument(
+        "--diarization-interval",
+        type=int,
+        default=3,
+        help="Run diarization every N chunks (default: 3)",
+    )
     return parser.parse_args(argv)
 
 
@@ -59,6 +65,7 @@ async def _run(args: argparse.Namespace) -> None:
         host=args.host,
         port=args.port,
         device=args.device,
+        diarization_interval=args.diarization_interval,
     )
 
     loop = asyncio.get_running_loop()

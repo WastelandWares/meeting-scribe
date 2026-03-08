@@ -65,6 +65,12 @@ class Pipeline:
 
     async def run(self) -> None:
         """Start the WS server, then loop: capture audio chunks -> transcribe -> broadcast."""
+        # Pre-load diarization model so first run isn't slow
+        if self._diarizer is not None:
+            logger.info("Pre-loading diarization model...")
+            self._diarizer._ensure_pipeline()
+            logger.info("Diarization model ready")
+
         await self._ws_server.start()
         self._running = True
         logger.info("Pipeline running — waiting for 'start' command")
