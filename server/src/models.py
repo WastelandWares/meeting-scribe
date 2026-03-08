@@ -71,7 +71,53 @@ class TranscriptionResult:
         )
 
 
-# NOTE: DiarizationResult will be added in M2.
+@dataclass
+class DiarizationResult:
+    """Result of a diarization pass over recorded audio.
+
+    Each revision represents a complete re-run of the diarization pipeline;
+    the speaker_timeline lists (speaker_id, start_seconds, end_seconds) tuples
+    covering the full audio duration.
+    """
+
+    revision: int = 0
+    speaker_timeline: list[tuple[str, float, float]] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "revision": self.revision,
+            "speaker_timeline": [
+                {"speaker_id": sid, "start": s, "end": e}
+                for sid, s, e in self.speaker_timeline
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DiarizationResult:
+        timeline = [
+            (entry["speaker_id"], entry["start"], entry["end"])
+            for entry in data.get("speaker_timeline", [])
+        ]
+        return cls(
+            revision=data.get("revision", 0),
+            speaker_timeline=timeline,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Recognized WebSocket message types
+# ---------------------------------------------------------------------------
+# Existing:
+#   "segments"             – transcription segments update
+#   "status"               – server state change
+# New (M2 – diarization):
+#   "diarization_update"   – updated speaker timeline from diarization pipeline
+#   "label_speaker"        – client request to rename / label a speaker
+
+WS_MSG_SEGMENTS = "segments"
+WS_MSG_STATUS = "status"
+WS_MSG_DIARIZATION_UPDATE = "diarization_update"
+WS_MSG_LABEL_SPEAKER = "label_speaker"
 
 
 @dataclass
