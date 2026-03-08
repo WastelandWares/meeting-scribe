@@ -27,6 +27,7 @@ def mock_audio_capture():
     ac.stop = AsyncMock()
     ac.pause = AsyncMock()
     ac.resume = AsyncMock()
+    ac.sample_rate = 16000
     return ac
 
 

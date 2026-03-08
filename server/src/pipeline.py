@@ -55,6 +55,7 @@ class Pipeline:
         # Diarization support
         self._diarization_interval = diarization_interval
         self._chunk_count = 0
+        self._audio_offset = 0.0  # absolute time offset for current chunk
         self._all_segments: list[Segment] = []
         self._speaker_labels: dict[str, str] = {}
         self._last_diarization = None
@@ -89,20 +90,23 @@ class Pipeline:
         self._state = ServerState.PROCESSING
         result: TranscriptionResult = self._transcriber.transcribe(chunk)
 
-        # Renumber segments with sequential IDs across chunks
+        # Renumber segments with sequential IDs and absolute timestamps
         renumbered: list[Segment] = []
         for seg in result.segments:
             self._segment_counter += 1
             renumbered.append(
                 Segment(
                     id=f"seg_{self._segment_counter:03d}",
-                    start=seg.start,
-                    end=seg.end,
+                    start=self._audio_offset + seg.start,
+                    end=self._audio_offset + seg.end,
                     text=seg.text,
                     speaker_id=seg.speaker_id,
                     speaker_name=seg.speaker_name,
                 )
             )
+
+        # Advance the offset by the chunk duration
+        self._audio_offset += len(chunk) / self._audio_capture.sample_rate
 
         # Accumulate all segments for diarization re-assignment
         self._all_segments.extend(renumbered)

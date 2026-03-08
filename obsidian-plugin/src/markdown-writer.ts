@@ -154,9 +154,10 @@ export class MarkdownWriter {
         const seen = new Set<string>();
         const result: string[] = [];
         for (const seg of segments) {
-            if (!seen.has(seg.speaker_id)) {
-                seen.add(seg.speaker_id);
-                result.push(seg.speaker_id);
+            const id = seg.speaker_id ?? 'Unknown';
+            if (!seen.has(id)) {
+                seen.add(id);
+                result.push(id);
             }
         }
         return result;
@@ -205,9 +206,13 @@ export class MarkdownWriter {
 
     /** Ensure the output folder exists in the vault. */
     private async ensureFolder(): Promise<void> {
-        const folder = this.vault.getAbstractFileByPath(this.outputFolder);
-        if (!folder) {
-            await this.vault.createFolder(this.outputFolder);
+        try {
+            const folder = this.vault.getAbstractFileByPath(this.outputFolder);
+            if (!folder) {
+                await this.vault.createFolder(this.outputFolder);
+            }
+        } catch {
+            // Folder may already exist due to race condition
         }
     }
 }

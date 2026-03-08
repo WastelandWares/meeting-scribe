@@ -116,9 +116,11 @@ def assign_speakers(
                 best_overlap = overlap
                 best_speaker = speaker_id
 
-        seg.speaker_id = best_speaker
+        # Only assign if we found actual overlap; preserve existing assignment otherwise
+        if best_speaker is not None:
+            seg.speaker_id = best_speaker
 
-        if labels and best_speaker and best_speaker in labels:
-            seg.speaker_name = labels[best_speaker]
+        if labels and seg.speaker_id and seg.speaker_id in labels:
+            seg.speaker_name = labels[seg.speaker_id]
 
     return segments
