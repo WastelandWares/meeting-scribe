@@ -159,11 +159,16 @@ def diarize(wav_bytes: bytes) -> list[dict]:
         token=hf_token,
     )
 
-    # pyannote can read from a file-like WAV
+    # Load audio as waveform dict to avoid torchcodec dependency
+    import torch
+    import torchaudio
+
     wav_buf = io.BytesIO(wav_bytes)
+    waveform, sample_rate = torchaudio.load(wav_buf)
+    audio_input = {"waveform": waveform, "sample_rate": sample_rate}
 
     print("Diarizing…")
-    diarization = pipeline(wav_buf)
+    diarization = pipeline(audio_input)
 
     turns: list[dict] = []
     for turn, _track, speaker in diarization.itertracks(yield_label=True):
