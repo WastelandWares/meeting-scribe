@@ -1,4 +1,4 @@
-"""Tests for the transcription pipeline (M1-T8)."""
+"""Tests for the transcription pipeline (M1-T8, M2-T6)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from src.models import Segment, ServerState, TranscriptionResult, WSMessage
+from src.models import (
+    DiarizationResult,
+    Segment,
+    ServerState,
+    TranscriptionResult,
+    WSMessage,
+    WS_MSG_DIARIZATION_UPDATE,
+)
 from src.pipeline import Pipeline
 
 
@@ -178,3 +185,136 @@ async def test_segment_ids_sequential(pipeline, mock_transcriber, mock_ws_server
     second_segments = second_call.data["segments"]
     assert second_segments[0]["id"] == "seg_003"
     assert second_segments[1]["id"] == "seg_004"
+
+
+# ---------------------------------------------------------------------------
+# M2-T6 — Diarization integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_diarizer():
+    """Create a mock Diarizer."""
+    d = MagicMock()
+    d.accumulate = MagicMock()
+    d.run_diarization = AsyncMock(
+        return_value=DiarizationResult(
+            revision=1,
+            speaker_timeline=[
+                ("SPEAKER_00", 0.0, 1.5),
+                ("SPEAKER_01", 1.5, 3.0),
+            ],
+        )
+    )
+    return d
+
+
+@pytest.fixture
+def pipeline_with_diarizer(mock_audio_capture, mock_transcriber, mock_ws_server, mock_diarizer):
+    """Create a Pipeline with mocked dependencies including a Diarizer."""
+    with (
+        patch("src.pipeline.AudioCapture", return_value=mock_audio_capture),
+        patch("src.pipeline.Transcriber", return_value=mock_transcriber),
+        patch("src.pipeline.WSServer", return_value=mock_ws_server),
+    ):
+        p = Pipeline(
+            model_size="base",
+            chunk_duration=30,
+            host="localhost",
+            port=9876,
+            diarization_interval=3,
+            hf_token="fake-token",
+        )
+    p._audio_capture = mock_audio_capture
+    p._transcriber = mock_transcriber
+    p._ws_server = mock_ws_server
+    # Inject mock diarizer instead of the real one
+    p._diarizer = mock_diarizer
+    return p
+
+
+@pytest.mark.asyncio
+async def test_diarization_triggers_periodically(
+    pipeline_with_diarizer, mock_transcriber, mock_diarizer
+):
+    """After N chunks (default 3), diarization runs."""
+    chunk = np.zeros(16000 * 30, dtype=np.float32)
+
+    # Process 2 chunks — diarization should NOT run yet
+    await pipeline_with_diarizer._process_chunk(chunk)
+    await pipeline_with_diarizer._process_chunk(chunk)
+    mock_diarizer.run_diarization.assert_not_awaited()
+
+    # 3rd chunk — diarization SHOULD run
+    await pipeline_with_diarizer._process_chunk(chunk)
+    mock_diarizer.run_diarization.assert_awaited_once()
+
+    # Diarizer.accumulate should have been called for each chunk
+    assert mock_diarizer.accumulate.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_diarization_update_broadcast(
+    pipeline_with_diarizer, mock_ws_server, mock_diarizer
+):
+    """Diarization result is broadcast as a diarization_update message."""
+    chunk = np.zeros(16000 * 30, dtype=np.float32)
+
+    # Process 3 chunks to trigger diarization
+    for _ in range(3):
+        await pipeline_with_diarizer._process_chunk(chunk)
+
+    # Find the diarization_update broadcast among all calls
+    diarization_calls = [
+        call
+        for call in mock_ws_server.broadcast.call_args_list
+        if call[0][0].type == WS_MSG_DIARIZATION_UPDATE
+    ]
+    assert len(diarization_calls) == 1
+    msg = diarization_calls[0][0][0]
+    assert msg.type == WS_MSG_DIARIZATION_UPDATE
+    # The data should contain segments with speaker_id assigned
+    assert "segments" in msg.data
+
+
+@pytest.mark.asyncio
+async def test_label_speaker_command(pipeline_with_diarizer):
+    """'label_speaker' command stores label in speaker_labels dict."""
+    await pipeline_with_diarizer.handle_command(
+        {"type": "label_speaker", "speaker_id": "SPEAKER_00", "name": "Alice"}
+    )
+
+    assert pipeline_with_diarizer._speaker_labels["SPEAKER_00"] == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_label_speaker_rebroadcasts(
+    pipeline_with_diarizer, mock_ws_server, mock_diarizer
+):
+    """After labeling, segments are re-broadcast with speaker names."""
+    chunk = np.zeros(16000 * 30, dtype=np.float32)
+
+    # Process 3 chunks so we have accumulated segments and a diarization result
+    for _ in range(3):
+        await pipeline_with_diarizer._process_chunk(chunk)
+
+    mock_ws_server.broadcast.reset_mock()
+
+    # Label a speaker
+    await pipeline_with_diarizer.handle_command(
+        {"type": "label_speaker", "speaker_id": "SPEAKER_00", "name": "Alice"}
+    )
+
+    # Should re-broadcast a diarization_update with the labelled name
+    diarization_calls = [
+        call
+        for call in mock_ws_server.broadcast.call_args_list
+        if call[0][0].type == WS_MSG_DIARIZATION_UPDATE
+    ]
+    assert len(diarization_calls) == 1
+    msg = diarization_calls[0][0][0]
+    segments = msg.data["segments"]
+
+    # At least one segment should have speaker_name "Alice"
+    alice_segments = [s for s in segments if s.get("speaker_name") == "Alice"]
+    assert len(alice_segments) > 0
