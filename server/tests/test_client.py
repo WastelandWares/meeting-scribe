@@ -59,9 +59,18 @@ async def run_client(host: str, port: int) -> None:
                 if msg["type"] == "segments":
                     for seg in msg["data"].get("segments", []):
                         ts = _format_time(seg.get("start", 0))
-                        speaker = seg.get("speaker_id", "SPEAKER_??")
+                        speaker = seg.get("speaker_name") or seg.get("speaker_id") or "SPEAKER_??"
                         text = seg.get("text", "").strip()
                         print(f"[{ts}] {speaker}: {text}")
+
+                elif msg["type"] == "diarization_update":
+                    print("\n--- diarization update ---")
+                    for seg in msg["data"].get("segments", []):
+                        ts = _format_time(seg.get("start", 0))
+                        speaker = seg.get("speaker_name") or seg.get("speaker_id") or "SPEAKER_??"
+                        text = seg.get("text", "").strip()
+                        print(f"[{ts}] {speaker}: {text}")
+                    print("--- end update ---\n")
 
                 elif msg["type"] == "status":
                     state = msg["data"].get("state", "unknown")

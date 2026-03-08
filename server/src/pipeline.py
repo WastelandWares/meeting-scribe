@@ -162,18 +162,24 @@ class Pipeline:
             name = cmd.get("name", "")
             if speaker_id:
                 self._speaker_labels[speaker_id] = name
-                # Re-assign speakers on accumulated segments and broadcast
+                # Re-assign speakers on accumulated segments
                 if self._last_diarization is not None:
                     assign_speakers(
                         self._all_segments,
                         self._last_diarization,
                         self._speaker_labels,
                     )
-                    msg = WSMessage(
-                        type=WS_MSG_DIARIZATION_UPDATE,
-                        data={"segments": [s.to_dict() for s in self._all_segments]},
-                    )
-                    await self._ws_server.broadcast(msg)
+                else:
+                    # No diarization yet — just apply name to matching segments
+                    for seg in self._all_segments:
+                        if seg.speaker_id == speaker_id:
+                            seg.speaker_name = name
+                # Always broadcast the update
+                msg = WSMessage(
+                    type=WS_MSG_DIARIZATION_UPDATE,
+                    data={"segments": [s.to_dict() for s in self._all_segments]},
+                )
+                await self._ws_server.broadcast(msg)
 
         else:
             logger.warning("Unknown command type: %s", cmd_type)
