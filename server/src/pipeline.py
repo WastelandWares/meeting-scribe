@@ -69,10 +69,16 @@ class Pipeline:
         logger.info("Pipeline running — waiting for 'start' command")
 
         try:
-            async for chunk in self._audio_capture.chunks():
-                if not self._running:
-                    break
-                await self._process_chunk(chunk)
+            while self._running:
+                # Wait for chunks; generator ends when audio_capture.stop() is called
+                async for chunk in self._audio_capture.chunks():
+                    if not self._running:
+                        break
+                    await self._process_chunk(chunk)
+                # Audio stopped (user hit stop) but server stays alive
+                # waiting for the next "start" command
+                if self._running:
+                    await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             logger.info("Pipeline loop cancelled")
         finally:

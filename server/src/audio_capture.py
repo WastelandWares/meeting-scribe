@@ -72,6 +72,8 @@ class AudioCapture:
         self._paused = False
         self._buffer = []
         self._buffer_samples = 0
+        # Fresh queue for new recording session
+        self._queue = asyncio.Queue()
 
         self._stream = sd.InputStream(
             samplerate=self.sample_rate,

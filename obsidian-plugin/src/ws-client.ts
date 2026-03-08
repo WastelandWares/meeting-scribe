@@ -17,6 +17,7 @@ export class WSClient {
 
     private static readonly MIN_BACKOFF = 1000;
     private static readonly MAX_BACKOFF = 30000;
+    private pendingMessages: object[] = [];
 
     state: ConnectionState = 'disconnected';
 
@@ -64,10 +65,12 @@ export class WSClient {
         this.setState('disconnected');
     }
 
-    /** Send a JSON message to the server. */
+    /** Send a JSON message to the server. Queues if connecting. */
     send(msg: object): void {
         if (this.ws && this.state === 'connected') {
             this.ws.send(JSON.stringify(msg));
+        } else {
+            this.pendingMessages.push(msg);
         }
     }
 
@@ -84,6 +87,11 @@ export class WSClient {
         ws.onopen = () => {
             this.backoffMs = WSClient.MIN_BACKOFF;
             this.setState('connected');
+            // Flush any messages queued while connecting
+            for (const msg of this.pendingMessages) {
+                ws.send(JSON.stringify(msg));
+            }
+            this.pendingMessages = [];
         };
 
         ws.onclose = () => {
@@ -112,15 +120,16 @@ export class WSClient {
             return;
         }
 
+        const data = msg.data as Record<string, unknown>;
         switch (msg.type) {
             case 'segments':
-                this.onSegments?.(msg.data as Segment[]);
+                this.onSegments?.((data.segments ?? data) as Segment[]);
                 break;
             case 'diarization_update':
-                this.onDiarizationUpdate?.(msg.data as DiarizationUpdate);
+                this.onDiarizationUpdate?.(data as unknown as DiarizationUpdate);
                 break;
             case 'status':
-                this.onStatus?.(msg.data as StatusData);
+                this.onStatus?.(data as unknown as StatusData);
                 break;
             default:
                 console.warn('[meeting-scribe] Unknown WS message type:', msg.type);
