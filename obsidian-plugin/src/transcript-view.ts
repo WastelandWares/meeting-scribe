@@ -132,9 +132,15 @@ export class TranscriptView extends ItemView {
     // Rendering
     // ------------------------------------------------------------------
 
+    private isRendering = false;
+
     private renderSegments(): void {
-        if (!this.segmentsEl) return;
-        this.segmentsEl.empty();
+        if (!this.segmentsEl || this.isRendering) return;
+        this.isRendering = true;
+        // Detach children without triggering blur on active inputs
+        while (this.segmentsEl.firstChild) {
+            this.segmentsEl.removeChild(this.segmentsEl.firstChild);
+        }
 
         for (const seg of this.segments) {
             const row = this.segmentsEl.createDiv({
@@ -169,6 +175,7 @@ export class TranscriptView extends ItemView {
 
         // Auto-scroll to bottom
         this.segmentsEl.scrollTop = this.segmentsEl.scrollHeight;
+        this.isRendering = false;
     }
 
     private showSpeakerRenameInput(
@@ -181,10 +188,12 @@ export class TranscriptView extends ItemView {
         input.value = currentName;
         input.className = "meeting-scribe-rename-input";
 
+        let committed = false;
         const commit = () => {
+            if (committed) return;
+            committed = true;
             const newName = input.value.trim();
             if (newName && newName !== currentName) {
-                // Update all segments with this speaker id
                 for (const seg of this.segments) {
                     if (seg.speaker_id === speakerId) {
                         seg.speaker_name = newName;
@@ -200,11 +209,12 @@ export class TranscriptView extends ItemView {
                 e.preventDefault();
                 commit();
             } else if (e.key === "Escape") {
+                committed = true;
                 this.renderSegments();
             }
         });
 
-        input.addEventListener("blur", commit);
+        input.addEventListener("blur", () => commit());
 
         speakerEl.textContent = "";
         speakerEl.appendChild(input);
