@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Optional
 
 import numpy as np
 
 from src.audio_capture import AudioCapture
-from src.models import Segment, ServerState, TranscriptionResult, WSMessage
+from src.diarizer import Diarizer, assign_speakers
+from src.models import (
+    Segment,
+    ServerState,
+    TranscriptionResult,
+    WSMessage,
+    WS_MSG_DIARIZATION_UPDATE,
+    WS_MSG_LABEL_SPEAKER,
+)
 from src.transcriber import Transcriber
 from src.ws_server import WSServer
 
@@ -26,6 +35,8 @@ class Pipeline:
         host: str = "localhost",
         port: int = 9876,
         device: Optional[int] = None,
+        diarization_interval: int = 3,
+        hf_token: Optional[str] = None,
     ) -> None:
         self._audio_capture = AudioCapture(
             chunk_duration=chunk_duration,
@@ -40,6 +51,16 @@ class Pipeline:
         self._state = ServerState.STOPPED
         self._segment_counter = 0
         self._running = False
+
+        # Diarization support
+        self._diarization_interval = diarization_interval
+        self._chunk_count = 0
+        self._all_segments: list[Segment] = []
+        self._speaker_labels: dict[str, str] = {}
+        self._last_diarization = None
+
+        token = hf_token or os.environ.get("HF_TOKEN")
+        self._diarizer: Optional[Diarizer] = Diarizer(hf_token=token) if token else None
 
     async def run(self) -> None:
         """Start the WS server, then loop: capture audio chunks -> transcribe -> broadcast."""
@@ -77,15 +98,40 @@ class Pipeline:
                 )
             )
 
+        # Accumulate all segments for diarization re-assignment
+        self._all_segments.extend(renumbered)
+
         msg = WSMessage(
             type="segments",
             data={"segments": [s.to_dict() for s in renumbered]},
         )
         await self._ws_server.broadcast(msg)
 
+        # Diarization: accumulate audio and trigger periodically
+        if self._diarizer is not None:
+            self._diarizer.accumulate(chunk)
+            self._chunk_count += 1
+
+            if self._chunk_count % self._diarization_interval == 0:
+                await self._run_diarization()
+
         # Return to recording state if we were recording
         if self._running:
             self._state = ServerState.RECORDING
+
+    async def _run_diarization(self) -> None:
+        """Run diarization and broadcast updated segments with speaker info."""
+        if self._diarizer is None:
+            return
+
+        self._last_diarization = await self._diarizer.run_diarization()
+        assign_speakers(self._all_segments, self._last_diarization, self._speaker_labels)
+
+        msg = WSMessage(
+            type=WS_MSG_DIARIZATION_UPDATE,
+            data={"segments": [s.to_dict() for s in self._all_segments]},
+        )
+        await self._ws_server.broadcast(msg)
 
     async def handle_command(self, cmd: dict) -> None:
         """Handle start/pause/stop commands from WS clients."""
@@ -110,6 +156,24 @@ class Pipeline:
             await self._audio_capture.resume()
             self._state = ServerState.RECORDING
             await self._broadcast_status()
+
+        elif cmd_type == WS_MSG_LABEL_SPEAKER:
+            speaker_id = cmd.get("speaker_id", "")
+            name = cmd.get("name", "")
+            if speaker_id:
+                self._speaker_labels[speaker_id] = name
+                # Re-assign speakers on accumulated segments and broadcast
+                if self._last_diarization is not None:
+                    assign_speakers(
+                        self._all_segments,
+                        self._last_diarization,
+                        self._speaker_labels,
+                    )
+                    msg = WSMessage(
+                        type=WS_MSG_DIARIZATION_UPDATE,
+                        data={"segments": [s.to_dict() for s in self._all_segments]},
+                    )
+                    await self._ws_server.broadcast(msg)
 
         else:
             logger.warning("Unknown command type: %s", cmd_type)
