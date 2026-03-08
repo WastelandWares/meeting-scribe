@@ -165,10 +165,10 @@ def diarize(audio: np.ndarray, sample_rate: int = SAMPLE_RATE) -> list[dict]:
     audio_input = {"waveform": waveform, "sample_rate": sample_rate}
 
     print("Diarizing…")
-    diarization = pipeline(audio_input)
+    result = pipeline(audio_input)
 
     turns: list[dict] = []
-    for turn, _track, speaker in diarization.itertracks(yield_label=True):
+    for turn, _track, speaker in result.speaker_diarization.itertracks(yield_label=True):
         turns.append(
             {"start": turn.start, "end": turn.end, "speaker": speaker}
         )
