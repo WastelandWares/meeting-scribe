@@ -156,7 +156,7 @@ def diarize(wav_bytes: bytes) -> list[dict]:
     print("Loading diarization pipeline…")
     pipeline = DiarizationPipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
-        use_auth_token=hf_token,
+        token=hf_token,
     )
 
     # pyannote can read from a file-like WAV
