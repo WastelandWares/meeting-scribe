@@ -27,7 +27,9 @@ async def test_server_starts(server: WSServer):
     """WSServer starts and accepts a WebSocket connection."""
     uri = f"ws://localhost:{server.port}"
     async with websockets.connect(uri) as ws:
-        assert ws.open
+        # Connection succeeded if we get here; verify by receiving the status message
+        raw = await asyncio.wait_for(ws.recv(), timeout=2)
+        assert json.loads(raw)["type"] == "status"
 
 
 @pytest.mark.asyncio
