@@ -133,7 +133,7 @@ def transcribe(audio: np.ndarray, model_name: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def diarize(wav_bytes: bytes) -> list[dict]:
+def diarize(audio: np.ndarray, sample_rate: int = SAMPLE_RATE) -> list[dict]:
     """Run pyannote speaker diarization on the audio.
 
     Returns a list of dicts with keys: start, end, speaker.
@@ -151,6 +151,7 @@ def diarize(wav_bytes: bytes) -> list[dict]:
         )
         return []
 
+    import torch
     from pyannote.audio import Pipeline as DiarizationPipeline
 
     print("Loading diarization pipeline…")
@@ -159,12 +160,8 @@ def diarize(wav_bytes: bytes) -> list[dict]:
         token=hf_token,
     )
 
-    # Load audio as waveform dict to avoid torchcodec dependency
-    import torch
-    import torchaudio
-
-    wav_buf = io.BytesIO(wav_bytes)
-    waveform, sample_rate = torchaudio.load(wav_buf)
+    # Convert int16 numpy array to float32 torch tensor (shape: 1 x samples)
+    waveform = torch.from_numpy(audio.astype(np.float32) / 32768.0).unsqueeze(0)
     audio_input = {"waveform": waveform, "sample_rate": sample_rate}
 
     print("Diarizing…")
@@ -327,8 +324,7 @@ def main():
         sys.exit(1)
 
     # 3. Diarize
-    wav_bytes = audio_to_wav_bytes(audio)
-    diar_turns = diarize(wav_bytes)
+    diar_turns = diarize(audio)
 
     # 4. Assign speakers
     assign_speakers(segments, diar_turns)
