@@ -40,6 +40,9 @@ def _make_mock_pipeline():
     fake_result.speaker_diarization = fake_annotation
     mock_pipeline_instance.return_value = fake_result
 
+    # .to() should return self so MPS/CUDA path doesn't break the mock
+    mock_pipeline_instance.to.return_value = mock_pipeline_instance
+
     mock_from_pretrained = MagicMock(return_value=mock_pipeline_instance)
     return mock_from_pretrained
 

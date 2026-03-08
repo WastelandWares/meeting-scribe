@@ -44,6 +44,11 @@ class Diarizer:
                 "pyannote/speaker-diarization-3.1",
                 token=self._hf_token,
             )
+            # Use MPS (Apple Silicon GPU) if available for faster inference
+            if torch.backends.mps.is_available():
+                self._pipeline = self._pipeline.to(torch.device("mps"))
+            elif torch.cuda.is_available():
+                self._pipeline = self._pipeline.to(torch.device("cuda"))
 
     def _run_sync(self) -> DiarizationResult:
         """Blocking diarization — meant to run in a thread-pool executor."""
