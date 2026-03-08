@@ -23,11 +23,16 @@ export default class MeetingScribePlugin extends Plugin {
     private recordingStartTime = 0;
 
     async onload(): Promise<void> {
+        console.log("[meeting-scribe] Loading plugin...");
         await this.loadSettings();
 
         this.wsClient = new WSClient(this.settings.serverUrl);
         this.speakerStore = new SpeakerStore();
-        await this.speakerStore.loadFromVault(this.app.vault);
+        try {
+            await this.speakerStore.loadFromVault(this.app.vault);
+        } catch (e) {
+            console.error("[meeting-scribe] Failed to load speaker store:", e);
+        }
         this.markdownWriter = new MarkdownWriter(
             this.app.vault,
             this.settings.outputFolder,
@@ -72,6 +77,7 @@ export default class MeetingScribePlugin extends Plugin {
 
         // Wire WSClient callbacks
         this.wsClient.onSegments = (segments: Segment[]) => {
+            console.log("[meeting-scribe] Received segments:", segments.length);
             this.mergeSegments(segments);
             const view = this.getTranscriptView();
             view?.updateSegments(segments);
@@ -90,6 +96,7 @@ export default class MeetingScribePlugin extends Plugin {
         };
 
         this.wsClient.onConnectionChange = (state) => {
+            console.log("[meeting-scribe] Connection state:", state);
             const view = this.getTranscriptView();
             view?.setConnectionStatus(state);
         };
