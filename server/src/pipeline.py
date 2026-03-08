@@ -192,5 +192,4 @@ class Pipeline:
 
     async def _cleanup(self) -> None:
         """Clean up resources on exit."""
-        await self._audio_capture.stop()
         await self._ws_server.stop()

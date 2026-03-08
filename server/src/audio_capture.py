@@ -90,6 +90,8 @@ class AudioCapture:
             self._stream = None
         self._buffer = []
         self._buffer_samples = 0
+        # Put sentinel to unblock chunks() generator
+        self._queue.put_nowait(None)
 
     async def pause(self) -> None:
         """Pause chunk emission; audio callbacks are silently dropped."""
@@ -105,4 +107,6 @@ class AudioCapture:
         """Async generator that yields audio chunks of chunk_duration seconds."""
         while True:
             chunk = await self._queue.get()
+            if chunk is None:
+                return
             yield chunk
