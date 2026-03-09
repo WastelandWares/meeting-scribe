@@ -14,6 +14,7 @@ import type {
     AssistantSummary,
     AssistantActionItems,
     AssistantStatus,
+    ServerInfo,
 } from "./types";
 import { TranscriptView, VIEW_TYPE_TRANSCRIPT } from "./transcript-view";
 
@@ -126,9 +127,21 @@ export default class MeetingScribePlugin extends Plugin {
         };
 
         this.wsClient.onAssistantStatus = (status: AssistantStatus) => {
-            console.log("[meeting-scribe] Assistant status:", status.status, status.message ?? "");
+            if (status.status !== "waiting") {
+                console.log("[meeting-scribe] Assistant status:", status.status, status.message ?? "");
+            }
             const view = this.getTranscriptView();
             view?.updateAssistantStatus(status);
+        };
+
+        this.wsClient.onServerInfo = (info: ServerInfo) => {
+            console.log("[meeting-scribe] Server info:", {
+                diarization: info.diarization,
+                assistant: info.assistant,
+                warnings: info.warnings.length,
+            });
+            const view = this.getTranscriptView();
+            view?.showServerInfo(info);
         };
 
         // Auto-start if configured

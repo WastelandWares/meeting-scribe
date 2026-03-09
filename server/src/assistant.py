@@ -210,6 +210,27 @@ class Assistant:
         # Check if we have enough data for an analysis window
         if self._should_analyze():
             self._schedule_analysis()
+        else:
+            # Broadcast countdown so the plugin can show progress
+            self._schedule_countdown()
+
+    def _schedule_countdown(self) -> None:
+        """Broadcast a countdown message showing time until next analysis."""
+        if not self._segments:
+            return
+        latest = self._segments[-1].end
+        time_since_last = latest - self._last_analysis_time
+        remaining = max(0, self._config.window_seconds - time_since_last)
+        seg_count = len(self._segments)
+        asyncio.create_task(self._broadcast(WSMessage(
+            type=WS_MSG_ASSISTANT_STATUS,
+            data={
+                "status": "waiting",
+                "countdown_seconds": round(remaining, 0),
+                "segments_accumulated": seg_count,
+                "window_seconds": self._config.window_seconds,
+            },
+        )))
 
     def _should_analyze(self) -> bool:
         """Determine if we have enough accumulated segments for analysis."""

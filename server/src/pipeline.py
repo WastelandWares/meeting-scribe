@@ -74,6 +74,39 @@ class Pipeline:
         self._assistant_config = assistant_config or AssistantConfig()
         self._assistant: Optional[Assistant] = None
 
+    def get_server_info(self) -> dict:
+        """Build capabilities dict broadcast to clients on connect."""
+        info: dict = {
+            "diarization": self._diarizer is not None,
+            "assistant": self._assistant is not None and self._assistant._ready,
+            "assistant_window": self._assistant_config.window_seconds if self._assistant_config.enabled else 0,
+            "warnings": [],
+        }
+        if self._diarizer is None:
+            info["warnings"].append({
+                "id": "no_diarization",
+                "level": "warning",
+                "title": "Speaker labels unavailable",
+                "message": "Set HF_TOKEN to enable speaker diarization. Get a free token at huggingface.co/settings/tokens",
+            })
+        if self._assistant_config.enabled and (self._assistant is None or not self._assistant._ready):
+            info["warnings"].append({
+                "id": "no_assistant",
+                "level": "warning",
+                "title": "AI assistant unavailable",
+                "message": "Ollama is not running or has no supported model. Install phi4-mini: ollama pull phi4-mini",
+            })
+        elif not self._assistant_config.enabled:
+            info["warnings"].append({
+                "id": "assistant_disabled",
+                "level": "info",
+                "title": "AI assistant disabled",
+                "message": "Start the server without --no-assistant to enable summaries and action items.",
+            })
+        if self._assistant is not None and self._assistant._ready:
+            info["assistant_model"] = self._assistant._ollama.model
+        return info
+
     async def run(self) -> None:
         """Start the WS server, then loop: capture audio chunks -> transcribe -> broadcast."""
         # Pre-load diarization model so first run isn't slow
@@ -81,6 +114,9 @@ class Pipeline:
             logger.info("Pre-loading diarization model...")
             self._diarizer._ensure_pipeline()
             logger.info("Diarization model ready")
+
+        # Set the server_info callback so clients get capabilities on connect
+        self._ws_server.on_client_connect = self._on_client_connect
 
         await self._ws_server.start()
 
@@ -235,6 +271,14 @@ class Pipeline:
         """Broadcast the current server state to all clients."""
         msg = WSMessage(type="status", data={"state": self._state.value})
         await self._ws_server.broadcast(msg)
+
+    async def _on_client_connect(self, websocket) -> None:
+        """Send server capabilities to a newly connected client."""
+        info_msg = WSMessage(
+            type="server_info",
+            data=self.get_server_info(),
+        )
+        await websocket.send(info_msg.to_json())
 
     async def stop(self) -> None:
         """Graceful shutdown."""

@@ -5,6 +5,7 @@ import type {
     AssistantSummary,
     AssistantActionItems,
     AssistantStatus,
+    ServerInfo,
 } from './types';
 
 export type ConnectionState = 'connected' | 'connecting' | 'disconnected';
@@ -36,6 +37,7 @@ export class WSClient {
     onAssistantSummary: ((summary: AssistantSummary) => void) | null = null;
     onAssistantActionItems: ((items: AssistantActionItems) => void) | null = null;
     onAssistantStatus: ((status: AssistantStatus) => void) | null = null;
+    onServerInfo: ((info: ServerInfo) => void) | null = null;
 
     constructor(url: string) {
         this.url = url;
@@ -149,6 +151,9 @@ export class WSClient {
                 break;
             case 'assistant_status':
                 this.onAssistantStatus?.(data as unknown as AssistantStatus);
+                break;
+            case 'server_info':
+                this.onServerInfo?.(data as unknown as ServerInfo);
                 break;
             default:
                 console.warn('[meeting-scribe] Unknown WS message type:', msg.type);

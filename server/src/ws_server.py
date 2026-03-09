@@ -29,6 +29,7 @@ class WSServer:
         self._requested_port = port
         self.port: int = port
         self.on_command = on_command
+        self.on_client_connect: Optional[Callable[[ServerConnection], Awaitable[None]]] = None
         self._clients: set[ServerConnection] = set()
         self._server: Optional[ws_server.Server] = None
         self._state = ServerState.STOPPED
@@ -93,6 +94,13 @@ class WSServer:
                 data={"state": self._state.value},
             )
             await websocket.send(status_msg.to_json())
+
+            # Send server capabilities/warnings
+            if self.on_client_connect is not None:
+                try:
+                    await self.on_client_connect(websocket)
+                except Exception:
+                    logger.exception("Error in on_client_connect callback")
 
             # Listen for commands from the client
             async for raw in websocket:
