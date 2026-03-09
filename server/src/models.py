@@ -119,6 +119,11 @@ WS_MSG_STATUS = "status"
 WS_MSG_DIARIZATION_UPDATE = "diarization_update"
 WS_MSG_LABEL_SPEAKER = "label_speaker"
 
+# Assistant message types (Sprint 1)
+WS_MSG_ASSISTANT_SUMMARY = "assistant_summary"
+WS_MSG_ASSISTANT_ACTION_ITEMS = "assistant_action_items"
+WS_MSG_ASSISTANT_STATUS = "assistant_status"
+
 
 @dataclass
 class WSMessage:
