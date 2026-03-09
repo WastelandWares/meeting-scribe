@@ -1,0 +1,27 @@
+# Meeting Scribe Server Configuration
+# Copy to config.toml and adjust for your setup.
+
+[server]
+host = "localhost"
+port = 9876
+
+[whisper]
+model = "base"           # tiny, base, small, medium, large-v3
+chunk_duration = 30      # seconds per audio chunk
+
+[diarization]
+enabled = true
+interval = 3             # run diarization every N chunks
+# hf_token = ""          # HuggingFace token for pyannote (or set HF_TOKEN env var)
+
+[assistant]
+enabled = true
+ollama_url = "http://localhost:11434"
+# model = ""             # auto-detect if empty: phi4-mini > qwen3:4b
+window_seconds = 180     # analysis window size
+overlap_seconds = 60     # overlap between windows for context
+temperature = 0.3
+
+[assistant.models]
+# Preferred models in priority order — first found in Ollama is used
+preferred = ["phi4-mini", "qwen3:4b"]
