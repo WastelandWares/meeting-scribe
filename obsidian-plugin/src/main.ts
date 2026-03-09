@@ -7,7 +7,14 @@ import {
     DEFAULT_SETTINGS,
 } from "./settings";
 import type { MeetingScribeSettings } from "./settings";
-import type { Segment, DiarizationUpdate, StatusData } from "./types";
+import type {
+    Segment,
+    DiarizationUpdate,
+    StatusData,
+    AssistantSummary,
+    AssistantActionItems,
+    AssistantStatus,
+} from "./types";
 import { TranscriptView, VIEW_TYPE_TRANSCRIPT } from "./transcript-view";
 
 const INTERIM_WRITE_INTERVAL_MS = 60_000;
@@ -99,6 +106,25 @@ export default class MeetingScribePlugin extends Plugin {
             console.log("[meeting-scribe] Connection state:", state);
             const view = this.getTranscriptView();
             view?.setConnectionStatus(state);
+        };
+
+        // Assistant callbacks (Stream 2)
+        this.wsClient.onAssistantSummary = (summary: AssistantSummary) => {
+            console.log("[meeting-scribe] Assistant summary #" + summary.analysis_number);
+            const view = this.getTranscriptView();
+            view?.updateAssistantSummary(summary);
+        };
+
+        this.wsClient.onAssistantActionItems = (data: AssistantActionItems) => {
+            console.log("[meeting-scribe] Action items:", data.items.length);
+            const view = this.getTranscriptView();
+            view?.updateAssistantActionItems(data);
+        };
+
+        this.wsClient.onAssistantStatus = (status: AssistantStatus) => {
+            console.log("[meeting-scribe] Assistant status:", status.status, status.message ?? "");
+            const view = this.getTranscriptView();
+            view?.updateAssistantStatus(status);
         };
 
         // Auto-start if configured

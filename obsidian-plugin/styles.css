@@ -26,3 +26,83 @@
 .meeting-scribe-header { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--background-modifier-border); }
 .meeting-scribe-segments { padding: 8px; overflow-y: auto; }
 .meeting-scribe-segment { margin-bottom: 4px; }
+
+/* ── Assistant panel ───────────────────────────────────────── */
+.meeting-scribe-assistant {
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding: 8px;
+    font-size: 0.9em;
+}
+
+.meeting-scribe-assistant-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.meeting-scribe-assistant-status {
+    font-weight: 400;
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+.meeting-scribe-assistant-status.assistant-analyzing { color: #FFA94D; }
+.meeting-scribe-assistant-status.assistant-error { color: #FF6B6B; }
+.meeting-scribe-assistant-status.assistant-ready { color: #51CF66; }
+.meeting-scribe-assistant-status.assistant-unavailable { color: #868E96; }
+
+.meeting-scribe-summary h4,
+.meeting-scribe-action-items h4 {
+    margin: 6px 0 4px 0;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.7;
+}
+
+.meeting-scribe-summary-text {
+    margin: 0 0 6px 0;
+    line-height: 1.4;
+}
+
+.meeting-scribe-topics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.meeting-scribe-topics-label {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+.meeting-scribe-topic-tag {
+    background: var(--background-modifier-hover);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 0.8em;
+}
+
+.meeting-scribe-action-list {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.meeting-scribe-action-item {
+    margin-bottom: 3px;
+    line-height: 1.4;
+}
+
+.meeting-scribe-action-item.priority-high { border-left: 2px solid #FF6B6B; padding-left: 6px; }
+.meeting-scribe-action-item.priority-medium { border-left: 2px solid #FFA94D; padding-left: 6px; }
+.meeting-scribe-action-item.priority-low { border-left: 2px solid #868E96; padding-left: 6px; }
+
+.meeting-scribe-action-assignee {
+    font-size: 0.85em;
+    opacity: 0.7;
+    font-style: italic;
+}

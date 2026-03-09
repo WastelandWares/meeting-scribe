@@ -1,4 +1,11 @@
-import type { Segment, DiarizationUpdate, StatusData } from './types';
+import type {
+    Segment,
+    DiarizationUpdate,
+    StatusData,
+    AssistantSummary,
+    AssistantActionItems,
+    AssistantStatus,
+} from './types';
 
 export type ConnectionState = 'connected' | 'connecting' | 'disconnected';
 
@@ -26,6 +33,9 @@ export class WSClient {
     onDiarizationUpdate: ((update: DiarizationUpdate) => void) | null = null;
     onStatus: ((status: StatusData) => void) | null = null;
     onConnectionChange: ((state: ConnectionState) => void) | null = null;
+    onAssistantSummary: ((summary: AssistantSummary) => void) | null = null;
+    onAssistantActionItems: ((items: AssistantActionItems) => void) | null = null;
+    onAssistantStatus: ((status: AssistantStatus) => void) | null = null;
 
     constructor(url: string) {
         this.url = url;
@@ -130,6 +140,15 @@ export class WSClient {
                 break;
             case 'status':
                 this.onStatus?.(data as unknown as StatusData);
+                break;
+            case 'assistant_summary':
+                this.onAssistantSummary?.(data as unknown as AssistantSummary);
+                break;
+            case 'assistant_action_items':
+                this.onAssistantActionItems?.(data as unknown as AssistantActionItems);
+                break;
+            case 'assistant_status':
+                this.onAssistantStatus?.(data as unknown as AssistantStatus);
                 break;
             default:
                 console.warn('[meeting-scribe] Unknown WS message type:', msg.type);
