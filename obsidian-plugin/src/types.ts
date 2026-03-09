@@ -45,7 +45,29 @@ export interface AssistantActionItems {
 
 /** Payload for an `assistant_status` message. */
 export interface AssistantStatus {
-    status: 'initializing' | 'analyzing' | 'ready' | 'error' | 'unavailable';
+    status: 'initializing' | 'analyzing' | 'ready' | 'error' | 'unavailable' | 'waiting';
     message?: string;
     model?: string;
+    countdown_seconds?: number;
+    segments_accumulated?: number;
+    window_seconds?: number;
+}
+
+// ── Server info (sent on connect) ───────────────────────────
+
+/** A warning/info banner from the server. */
+export interface ServerWarning {
+    id: string;
+    level: 'warning' | 'info' | 'error';
+    title: string;
+    message: string;
+}
+
+/** Payload for a `server_info` message (sent on connect). */
+export interface ServerInfo {
+    diarization: boolean;
+    assistant: boolean;
+    assistant_window: number;
+    assistant_model?: string;
+    warnings: ServerWarning[];
 }

@@ -4,6 +4,8 @@ import type {
     AssistantActionItems,
     AssistantStatus,
     ActionItem,
+    ServerInfo,
+    ServerWarning,
 } from "./types";
 
 export const VIEW_TYPE_TRANSCRIPT = "meeting-scribe-transcript";
@@ -31,12 +33,14 @@ export class TranscriptView extends ItemView {
     private timerEl: HTMLElement;
     private controlsEl: HTMLElement;
     private recordingBarEl: HTMLElement;
+    private bannersEl: HTMLElement;
     private segmentsEl: HTMLElement;
     private emptyStateEl: HTMLElement;
 
     // Assistant DOM refs
     private assistantEl: HTMLElement;
     private assistantStatusEl: HTMLElement;
+    private assistantCountdownEl: HTMLElement;
     private summaryEl: HTMLElement;
     private actionItemsEl: HTMLElement;
 
@@ -47,6 +51,8 @@ export class TranscriptView extends ItemView {
     private latestActionItems: ActionItem[] = [];
     private recordingStartMs = 0;
     private timerInterval: ReturnType<typeof setInterval> | null = null;
+    private dismissedBanners: Set<string> = new Set();
+    private assistantWindowSeconds = 180;
 
     /** Callback wired by the plugin to send WS control messages. */
     onControlAction: ((action: "start" | "pause" | "stop") => void) | null =
@@ -111,6 +117,11 @@ export class TranscriptView extends ItemView {
         this.recordingBarEl.createSpan({ cls: "meeting-scribe-rec-dot" });
         this.recordingBarEl.createSpan({ text: "Recording" });
 
+        // ── Banners container ─────────────────────────────────
+        this.bannersEl = container.createDiv({
+            cls: "meeting-scribe-banners",
+        });
+
         // ── Assistant panel ──────────────────────────────────
         this.assistantEl = container.createDiv({
             cls: "meeting-scribe-assistant",
@@ -125,6 +136,11 @@ export class TranscriptView extends ItemView {
             text: "",
         });
 
+        this.assistantCountdownEl = this.assistantEl.createDiv({
+            cls: "meeting-scribe-countdown",
+        });
+        this.assistantCountdownEl.style.display = "none";
+
         this.summaryEl = this.assistantEl.createDiv({
             cls: "meeting-scribe-summary",
         });
@@ -133,7 +149,7 @@ export class TranscriptView extends ItemView {
             cls: "meeting-scribe-action-items",
         });
 
-        // Hidden until assistant sends first update
+        // Hidden until assistant sends first update or server_info arrives
         this.assistantEl.style.display = "none";
 
         // ── Empty state ──────────────────────────────────────
@@ -221,16 +237,106 @@ export class TranscriptView extends ItemView {
     /** Update the assistant status indicator. */
     updateAssistantStatus(data: AssistantStatus): void {
         this.assistantEl.style.display = "";
+
         if (this.assistantStatusEl) {
-            const icon =
-                data.status === "analyzing"
-                    ? " ..."
-                    : data.status === "error"
-                        ? " !"
-                        : "";
-            this.assistantStatusEl.textContent = ` (${data.status}${icon})`;
-            this.assistantStatusEl.className = `meeting-scribe-assistant-status assistant-${data.status}`;
+            if (data.status === "waiting" && data.countdown_seconds !== undefined) {
+                // Show countdown
+                const mins = Math.floor(data.countdown_seconds / 60);
+                const secs = Math.floor(data.countdown_seconds % 60);
+                const timeStr = mins > 0
+                    ? `${mins}m ${String(secs).padStart(2, "0")}s`
+                    : `${secs}s`;
+                this.assistantStatusEl.textContent = ` (next analysis in ${timeStr})`;
+                this.assistantStatusEl.className = "meeting-scribe-assistant-status assistant-waiting";
+
+                // Update countdown bar
+                if (this.assistantCountdownEl) {
+                    this.assistantCountdownEl.style.display = "";
+                    const pct = Math.max(0, Math.min(100,
+                        100 * (1 - data.countdown_seconds / this.assistantWindowSeconds)));
+                    this.renderCountdown(pct, data.segments_accumulated ?? 0, data.countdown_seconds);
+                }
+            } else {
+                const icon =
+                    data.status === "analyzing"
+                        ? " ..."
+                        : data.status === "error"
+                            ? " !"
+                            : "";
+                this.assistantStatusEl.textContent = ` (${data.status}${icon})`;
+                this.assistantStatusEl.className = `meeting-scribe-assistant-status assistant-${data.status}`;
+
+                // Hide countdown when analyzing or showing results
+                if (this.assistantCountdownEl && data.status !== "waiting") {
+                    this.assistantCountdownEl.style.display = "none";
+                }
+            }
         }
+    }
+
+    /** Handle server_info message — show banners for missing capabilities. */
+    showServerInfo(info: ServerInfo): void {
+        this.assistantWindowSeconds = info.assistant_window || 180;
+
+        // Show assistant panel header if assistant is enabled (even if waiting)
+        if (info.assistant) {
+            this.assistantEl.style.display = "";
+            if (info.assistant_model) {
+                this.assistantStatusEl.textContent = ` (${info.assistant_model})`;
+                this.assistantStatusEl.className = "meeting-scribe-assistant-status assistant-ready";
+            }
+        }
+
+        // Render warning/info banners
+        for (const warning of info.warnings) {
+            if (!this.dismissedBanners.has(warning.id)) {
+                this.addBanner(warning);
+            }
+        }
+    }
+
+    /** Add a banner notification. */
+    private addBanner(warning: ServerWarning): void {
+        if (!this.bannersEl) return;
+
+        // Don't duplicate
+        const existing = this.bannersEl.querySelector(`[data-banner-id="${warning.id}"]`);
+        if (existing) return;
+
+        const banner = this.bannersEl.createDiv({
+            cls: `meeting-scribe-banner banner-${warning.level}`,
+        });
+        banner.setAttribute("data-banner-id", warning.id);
+
+        const iconMap: Record<string, string> = {
+            warning: "\u26A0",
+            info: "\u2139",
+            error: "\u2716",
+        };
+
+        const content = banner.createDiv({ cls: "meeting-scribe-banner-content" });
+        content.createSpan({
+            cls: "meeting-scribe-banner-icon",
+            text: iconMap[warning.level] || "\u2139",
+        });
+        const textArea = content.createDiv({ cls: "meeting-scribe-banner-text" });
+        textArea.createDiv({
+            cls: "meeting-scribe-banner-title",
+            text: warning.title,
+        });
+        textArea.createDiv({
+            cls: "meeting-scribe-banner-message",
+            text: warning.message,
+        });
+
+        const dismissBtn = banner.createEl("button", {
+            cls: "meeting-scribe-banner-dismiss",
+            text: "\u2715",
+        });
+        dismissBtn.addEventListener("click", () => {
+            this.dismissedBanners.add(warning.id);
+            banner.remove();
+        });
     }
 
     /** Notify the view that recording has started. */
@@ -485,5 +591,37 @@ export class TranscriptView extends ItemView {
                 });
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Countdown progress bar
+    // ------------------------------------------------------------------
+
+    private renderCountdown(pct: number, segCount: number, remaining: number): void {
+        if (!this.assistantCountdownEl) return;
+
+        while (this.assistantCountdownEl.firstChild) {
+            this.assistantCountdownEl.removeChild(this.assistantCountdownEl.firstChild);
+        }
+
+        const barContainer = this.assistantCountdownEl.createDiv({
+            cls: "meeting-scribe-countdown-bar",
+        });
+
+        const fill = barContainer.createDiv({
+            cls: "meeting-scribe-countdown-fill",
+        });
+        fill.style.width = `${pct}%`;
+
+        const label = this.assistantCountdownEl.createDiv({
+            cls: "meeting-scribe-countdown-label",
+        });
+
+        const mins = Math.floor(remaining / 60);
+        const secs = Math.floor(remaining % 60);
+        const timeStr = mins > 0
+            ? `${mins}m ${String(secs).padStart(2, "0")}s`
+            : `${secs}s`;
+        label.textContent = `${segCount} segments collected \u2022 analysis in ${timeStr}`;
     }
 }
