@@ -1,7 +1,7 @@
 """Thin wrapper around faster-whisper for speech-to-text transcription.
 
 Supports standard Whisper models (tiny, base, small, medium, large-v3)
-and NVIDIA Parakeet CTC models (parakeet-tdt-0.6b-v2, parakeet-ctc-1.1b).
+and NVIDIA Parakeet CTC models via BatchedInferencePipeline.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from faster_whisper import WhisperModel
+from faster_whisper import WhisperModel, BatchedInferencePipeline
 
 from src.models import Segment, TranscriptionResult
 
@@ -22,8 +22,8 @@ MODEL_ALIASES: dict[str, str] = {
     "parakeet-ctc": "nvidia/parakeet-ctc-1.1b",
 }
 
-# Models that use CTC/TDT decoding (no beam_size parameter)
-CTC_MODELS = {"nvidia/parakeet-tdt-0.6b-v2", "nvidia/parakeet-ctc-1.1b"}
+# Models that need BatchedInferencePipeline (CTC/TDT architecture)
+BATCHED_MODELS = {"nvidia/parakeet-tdt-0.6b-v2", "nvidia/parakeet-ctc-1.1b"}
 
 
 class Transcriber:
@@ -42,14 +42,21 @@ class Transcriber:
     def __init__(self, model_size: str = "base") -> None:
         # Resolve aliases
         self.model_name = MODEL_ALIASES.get(model_size, model_size)
-        self.is_ctc = self.model_name in CTC_MODELS
+        self.is_batched = self.model_name in BATCHED_MODELS
 
         logger.info(
             "Loading transcription model: %s%s",
             self.model_name,
-            " (CTC/TDT)" if self.is_ctc else "",
+            " (Parakeet/BatchedInference)" if self.is_batched else "",
         )
-        self.model = WhisperModel(self.model_name, device="cpu", compute_type="int8")
+
+        if self.is_batched:
+            # Parakeet models use BatchedInferencePipeline
+            self.model = WhisperModel(self.model_name, device="cpu", compute_type="int8")
+            self.pipeline = BatchedInferencePipeline(model=self.model)
+        else:
+            self.model = WhisperModel(self.model_name, device="cpu", compute_type="int8")
+            self.pipeline = None
 
     def transcribe(
         self, audio: np.ndarray, sr: int = 16000
@@ -65,9 +72,9 @@ class Transcriber:
         """
         audio = audio.astype(np.float32, copy=False)
 
-        if self.is_ctc:
-            # CTC/TDT models don't use beam_size
-            segments_gen, info = self.model.transcribe(audio)
+        if self.pipeline is not None:
+            # BatchedInferencePipeline for Parakeet models
+            segments_gen, info = self.pipeline.transcribe(audio, batch_size=16)
         else:
             segments_gen, info = self.model.transcribe(audio, beam_size=5)
 
