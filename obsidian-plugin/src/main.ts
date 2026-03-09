@@ -66,6 +66,8 @@ export default class MeetingScribePlugin extends Plugin {
                 this.wsClient.send({ type: "start", model: this.settings.whisperModel });
                 this.recordingStartTime = Date.now();
                 this.startInterimWrites();
+                const view = this.getTranscriptView();
+                view?.setRecording(true);
             },
         });
 
@@ -75,6 +77,8 @@ export default class MeetingScribePlugin extends Plugin {
             callback: async () => {
                 this.wsClient.send({ type: "stop" });
                 this.stopInterimWrites();
+                const view = this.getTranscriptView();
+                view?.setRecording(false);
                 await this.finalizeMeeting();
             },
         });

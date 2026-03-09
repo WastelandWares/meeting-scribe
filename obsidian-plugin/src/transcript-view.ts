@@ -22,19 +22,31 @@ type ConnectionStatus = "connected" | "disconnected" | "connecting";
 export class TranscriptView extends ItemView {
     private segments: Segment[] = [];
     private connectionStatus: ConnectionStatus = "disconnected";
-    private headerEl: HTMLElement;
-    private segmentsEl: HTMLElement;
-    private statusEl: HTMLElement;
-    private speakerColorMap: Map<string, number> = new Map();
-    private nextColorIndex = 0;
+    private isRecording = false;
 
-    // Assistant state
+    // DOM refs
+    private headerEl: HTMLElement;
+    private statusDotEl: HTMLElement;
+    private statusTextEl: HTMLElement;
+    private timerEl: HTMLElement;
+    private controlsEl: HTMLElement;
+    private recordingBarEl: HTMLElement;
+    private segmentsEl: HTMLElement;
+    private emptyStateEl: HTMLElement;
+
+    // Assistant DOM refs
     private assistantEl: HTMLElement;
     private assistantStatusEl: HTMLElement;
     private summaryEl: HTMLElement;
     private actionItemsEl: HTMLElement;
+
+    // State
+    private speakerColorMap: Map<string, number> = new Map();
+    private nextColorIndex = 0;
     private latestSummary: AssistantSummary | null = null;
     private latestActionItems: ActionItem[] = [];
+    private recordingStartMs = 0;
+    private timerInterval: ReturnType<typeof setInterval> | null = null;
 
     /** Callback wired by the plugin to send WS control messages. */
     onControlAction: ((action: "start" | "pause" | "stop") => void) | null =
@@ -66,34 +78,40 @@ export class TranscriptView extends ItemView {
         container.empty();
         container.addClass("meeting-scribe-view");
 
-        // --- Header bar with controls ---
+        // ── Header bar ───────────────────────────────────────
         this.headerEl = container.createDiv({ cls: "meeting-scribe-header" });
 
-        this.statusEl = this.headerEl.createSpan({
-            cls: "meeting-scribe-status",
+        const statusArea = this.headerEl.createDiv({
+            cls: "meeting-scribe-status-area",
+        });
+
+        this.statusDotEl = statusArea.createSpan({
+            cls: `meeting-scribe-status-dot status-${this.connectionStatus}`,
+        });
+        this.statusTextEl = statusArea.createSpan({
+            cls: "meeting-scribe-status-text",
             text: this.connectionStatus,
         });
 
-        const controls = this.headerEl.createDiv({
+        this.timerEl = this.headerEl.createSpan({
+            cls: "meeting-scribe-timer",
+            text: "",
+        });
+
+        this.controlsEl = this.headerEl.createDiv({
             cls: "meeting-scribe-controls",
         });
 
-        const startBtn = controls.createEl("button", { text: "Start" });
-        startBtn.addEventListener("click", () =>
-            this.onControlAction?.("start")
-        );
+        this.createControlButtons();
 
-        const pauseBtn = controls.createEl("button", { text: "Pause" });
-        pauseBtn.addEventListener("click", () =>
-            this.onControlAction?.("pause")
-        );
+        // ── Recording indicator bar ──────────────────────────
+        this.recordingBarEl = container.createDiv({
+            cls: "meeting-scribe-recording-bar",
+        });
+        this.recordingBarEl.createSpan({ cls: "meeting-scribe-rec-dot" });
+        this.recordingBarEl.createSpan({ text: "Recording" });
 
-        const stopBtn = controls.createEl("button", { text: "Stop" });
-        stopBtn.addEventListener("click", () =>
-            this.onControlAction?.("stop")
-        );
-
-        // --- Assistant panel (collapsible) ---
+        // ── Assistant panel ──────────────────────────────────
         this.assistantEl = container.createDiv({
             cls: "meeting-scribe-assistant",
         });
@@ -115,10 +133,27 @@ export class TranscriptView extends ItemView {
             cls: "meeting-scribe-action-items",
         });
 
-        // Start collapsed until assistant sends first update
+        // Hidden until assistant sends first update
         this.assistantEl.style.display = "none";
 
-        // --- Scrollable segments area ---
+        // ── Empty state ──────────────────────────────────────
+        this.emptyStateEl = container.createDiv({
+            cls: "meeting-scribe-empty",
+        });
+        this.emptyStateEl.createDiv({
+            cls: "meeting-scribe-empty-icon",
+            text: "\uD83C\uDFA4",
+        });
+        this.emptyStateEl.createDiv({
+            cls: "meeting-scribe-empty-title",
+            text: "No transcript yet",
+        });
+        this.emptyStateEl.createDiv({
+            cls: "meeting-scribe-empty-hint",
+            text: "Click Start to begin recording, or use the command palette: Meeting Scribe: Start Meeting",
+        });
+
+        // ── Scrollable segments area ─────────────────────────
         this.segmentsEl = container.createDiv({
             cls: "meeting-scribe-segments",
         });
@@ -127,6 +162,7 @@ export class TranscriptView extends ItemView {
     }
 
     async onClose(): Promise<void> {
+        this.stopTimer();
         this.contentEl.empty();
     }
 
@@ -151,7 +187,6 @@ export class TranscriptView extends ItemView {
     replaceAllSegments(segments: Segment[]): void {
         this.segments = segments;
         this.renderSegments();
-        // Brief flash to indicate a full re-render happened.
         this.segmentsEl.addClass("meeting-scribe-flash");
         setTimeout(() => {
             this.segmentsEl.removeClass("meeting-scribe-flash");
@@ -161,9 +196,11 @@ export class TranscriptView extends ItemView {
     /** Update the connection status indicator. */
     setConnectionStatus(status: ConnectionStatus): void {
         this.connectionStatus = status;
-        if (this.statusEl) {
-            this.statusEl.textContent = status;
-            this.statusEl.className = `meeting-scribe-status status-${status}`;
+        if (this.statusDotEl) {
+            this.statusDotEl.className = `meeting-scribe-status-dot status-${status}`;
+        }
+        if (this.statusTextEl) {
+            this.statusTextEl.textContent = status;
         }
     }
 
@@ -188,9 +225,7 @@ export class TranscriptView extends ItemView {
             const icon =
                 data.status === "analyzing"
                     ? " ..."
-                    : data.status === "ready"
-                      ? ""
-                      : data.status === "error"
+                    : data.status === "error"
                         ? " !"
                         : "";
             this.assistantStatusEl.textContent = ` (${data.status}${icon})`;
@@ -198,8 +233,81 @@ export class TranscriptView extends ItemView {
         }
     }
 
+    /** Notify the view that recording has started. */
+    setRecording(recording: boolean): void {
+        this.isRecording = recording;
+        if (this.recordingBarEl) {
+            if (recording) {
+                this.recordingBarEl.addClass("is-recording");
+                this.startTimer();
+            } else {
+                this.recordingBarEl.removeClass("is-recording");
+                this.stopTimer();
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
-    // Rendering
+    // Control buttons
+    // ------------------------------------------------------------------
+
+    private createControlButtons(): void {
+        const startBtn = this.controlsEl.createEl("button", {
+            cls: "meeting-scribe-btn btn-start",
+        });
+        startBtn.createSpan({ cls: "meeting-scribe-btn-icon", text: "\u25B6" });
+        startBtn.createSpan({ text: "Start" });
+        startBtn.addEventListener("click", () => {
+            this.onControlAction?.("start");
+            this.setRecording(true);
+        });
+
+        const pauseBtn = this.controlsEl.createEl("button", {
+            cls: "meeting-scribe-btn btn-pause",
+        });
+        pauseBtn.createSpan({ cls: "meeting-scribe-btn-icon", text: "\u23F8" });
+        pauseBtn.createSpan({ text: "Pause" });
+        pauseBtn.addEventListener("click", () =>
+            this.onControlAction?.("pause")
+        );
+
+        const stopBtn = this.controlsEl.createEl("button", {
+            cls: "meeting-scribe-btn btn-stop",
+        });
+        stopBtn.createSpan({ cls: "meeting-scribe-btn-icon", text: "\u25A0" });
+        stopBtn.createSpan({ text: "Stop" });
+        stopBtn.addEventListener("click", () => {
+            this.onControlAction?.("stop");
+            this.setRecording(false);
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Timer
+    // ------------------------------------------------------------------
+
+    private startTimer(): void {
+        this.stopTimer();
+        this.recordingStartMs = Date.now();
+        this.timerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - this.recordingStartMs) / 1000);
+            const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+            const ss = String(elapsed % 60).padStart(2, "0");
+            if (this.timerEl) {
+                this.timerEl.textContent = `${mm}:${ss}`;
+            }
+        }, 1000);
+    }
+
+    private stopTimer(): void {
+        if (this.timerInterval !== null) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Segment rendering
     // ------------------------------------------------------------------
 
     private isRendering = false;
@@ -207,7 +315,16 @@ export class TranscriptView extends ItemView {
     private renderSegments(): void {
         if (!this.segmentsEl || this.isRendering) return;
         this.isRendering = true;
-        // Detach children without triggering blur on active inputs
+
+        // Toggle empty state vs segments
+        if (this.emptyStateEl) {
+            this.emptyStateEl.style.display =
+                this.segments.length === 0 ? "" : "none";
+        }
+        this.segmentsEl.style.display =
+            this.segments.length === 0 ? "none" : "";
+
+        // Clear and re-render
         while (this.segmentsEl.firstChild) {
             this.segmentsEl.removeChild(this.segmentsEl.firstChild);
         }
@@ -221,7 +338,7 @@ export class TranscriptView extends ItemView {
             const ts = this.formatTimestamp(seg.start);
             row.createSpan({
                 cls: "meeting-scribe-timestamp",
-                text: `[${ts}] `,
+                text: `${ts}`,
             });
 
             // Speaker name (clickable for inline rename)
