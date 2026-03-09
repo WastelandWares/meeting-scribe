@@ -8,6 +8,7 @@ import logging
 import signal
 import sys
 
+from src.assistant import AssistantConfig
 from src.pipeline import Pipeline
 
 logging.basicConfig(
@@ -55,10 +56,41 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=3,
         help="Run diarization every N chunks (default: 3)",
     )
+
+    # Assistant options
+    parser.add_argument(
+        "--no-assistant",
+        action="store_true",
+        help="Disable the AI assistant (summary/action items)",
+    )
+    parser.add_argument(
+        "--assistant-model",
+        default=None,
+        help="Ollama model for assistant (default: auto-detect preferred)",
+    )
+    parser.add_argument(
+        "--ollama-url",
+        default="http://localhost:11434",
+        help="Ollama API base URL (default: http://localhost:11434)",
+    )
+    parser.add_argument(
+        "--assistant-window",
+        type=float,
+        default=180,
+        help="Analysis window in seconds (default: 180)",
+    )
+
     return parser.parse_args(argv)
 
 
 async def _run(args: argparse.Namespace) -> None:
+    assistant_config = AssistantConfig(
+        enabled=not args.no_assistant,
+        model=args.assistant_model,
+        ollama_url=args.ollama_url,
+        window_seconds=args.assistant_window,
+    )
+
     pipeline = Pipeline(
         model_size=args.model,
         chunk_duration=args.chunk_duration,
@@ -66,6 +98,7 @@ async def _run(args: argparse.Namespace) -> None:
         port=args.port,
         device=args.device,
         diarization_interval=args.diarization_interval,
+        assistant_config=assistant_config,
     )
 
     loop = asyncio.get_running_loop()

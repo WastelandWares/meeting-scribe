@@ -1,4 +1,9 @@
-"""Transcription pipeline orchestrating audio capture, transcription, and WS broadcast."""
+"""Transcription pipeline orchestrating audio capture, transcription, and WS broadcast.
+
+Dual-stream architecture:
+  Stream 1: audio -> STT -> broadcast (real-time, unchanged)
+  Stream 2: segments -> accumulator -> Assistant -> broadcast (batched analysis)
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from typing import Optional
 
 import numpy as np
 
+from src.assistant import Assistant, AssistantConfig
 from src.audio_capture import AudioCapture
 from src.diarizer import Diarizer, assign_speakers
 from src.models import (
@@ -37,6 +43,7 @@ class Pipeline:
         device: Optional[int] = None,
         diarization_interval: int = 3,
         hf_token: Optional[str] = None,
+        assistant_config: Optional[AssistantConfig] = None,
     ) -> None:
         self._audio_capture = AudioCapture(
             chunk_duration=chunk_duration,
@@ -63,6 +70,10 @@ class Pipeline:
         token = hf_token or os.environ.get("HF_TOKEN")
         self._diarizer: Optional[Diarizer] = Diarizer(hf_token=token) if token else None
 
+        # Stream 2: Assistant (batched analysis)
+        self._assistant_config = assistant_config or AssistantConfig()
+        self._assistant: Optional[Assistant] = None
+
     async def run(self) -> None:
         """Start the WS server, then loop: capture audio chunks -> transcribe -> broadcast."""
         # Pre-load diarization model so first run isn't slow
@@ -72,6 +83,19 @@ class Pipeline:
             logger.info("Diarization model ready")
 
         await self._ws_server.start()
+
+        # Initialize assistant (Stream 2)
+        if self._assistant_config.enabled:
+            self._assistant = Assistant(
+                config=self._assistant_config,
+                broadcast=self._ws_server.broadcast,
+            )
+            assistant_ready = await self._assistant.start()
+            if assistant_ready:
+                logger.info("Assistant initialized — dual-stream active")
+            else:
+                logger.info("Assistant unavailable — single-stream mode")
+
         self._running = True
         logger.info("Pipeline running — waiting for 'start' command")
 
@@ -122,6 +146,10 @@ class Pipeline:
             data={"segments": [s.to_dict() for s in renumbered]},
         )
         await self._ws_server.broadcast(msg)
+
+        # Stream 2: feed segments to assistant for batched analysis
+        if self._assistant is not None:
+            self._assistant.feed_segments(renumbered)
 
         # Diarization: accumulate audio and trigger periodically
         if self._diarizer is not None:
@@ -212,9 +240,13 @@ class Pipeline:
         """Graceful shutdown."""
         self._running = False
         await self._audio_capture.stop()
+        if self._assistant is not None:
+            await self._assistant.stop()
         await self._ws_server.stop()
         logger.info("Pipeline stopped")
 
     async def _cleanup(self) -> None:
         """Clean up resources on exit."""
+        if self._assistant is not None:
+            await self._assistant.stop()
         await self._ws_server.stop()
