@@ -79,6 +79,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=180,
         help="Analysis window in seconds (default: 180)",
     )
+    parser.add_argument(
+        "--skills-path",
+        type=str,
+        default=None,
+        help="Path to user skills directory (markdown files)",
+    )
 
     return parser.parse_args(argv)
 
@@ -89,6 +95,7 @@ async def _run(args: argparse.Namespace) -> None:
         model=args.assistant_model,
         ollama_url=args.ollama_url,
         window_seconds=args.assistant_window,
+        skills_path=args.skills_path,
     )
 
     pipeline = Pipeline(

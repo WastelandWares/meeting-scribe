@@ -5,6 +5,7 @@ import type {
     AssistantSummary,
     AssistantActionItems,
     AssistantStatus,
+    AssistantTopicChange,
     ServerInfo,
 } from './types';
 
@@ -37,6 +38,7 @@ export class WSClient {
     onAssistantSummary: ((summary: AssistantSummary) => void) | null = null;
     onAssistantActionItems: ((items: AssistantActionItems) => void) | null = null;
     onAssistantStatus: ((status: AssistantStatus) => void) | null = null;
+    onAssistantTopicChange: ((data: AssistantTopicChange) => void) | null = null;
     onServerInfo: ((info: ServerInfo) => void) | null = null;
 
     constructor(url: string) {
@@ -151,6 +153,9 @@ export class WSClient {
                 break;
             case 'assistant_status':
                 this.onAssistantStatus?.(data as unknown as AssistantStatus);
+                break;
+            case 'assistant_topic_change':
+                this.onAssistantTopicChange?.(data as unknown as AssistantTopicChange);
                 break;
             case 'server_info':
                 this.onServerInfo?.(data as unknown as ServerInfo);

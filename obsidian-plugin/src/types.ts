@@ -53,6 +53,19 @@ export interface AssistantStatus {
     window_seconds?: number;
 }
 
+/** Payload for an `assistant_topic_change` message. */
+export interface TopicChange {
+    new_topic: string;
+    previous_topic: string | null;
+    timestamp: number;
+    confidence: number;
+}
+
+export interface AssistantTopicChange {
+    topic: TopicChange;
+    all_topics: TopicChange[];
+}
+
 // ── Server info (sent on connect) ───────────────────────────
 
 /** A warning/info banner from the server. */
