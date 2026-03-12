@@ -105,6 +105,8 @@ class Pipeline:
             })
         if self._assistant is not None and self._assistant._ready:
             info["assistant_model"] = self._assistant._ollama.model
+        if self._assistant is not None:
+            info["skills"] = self._assistant.get_skills_info()
         return info
 
     async def run(self) -> None:

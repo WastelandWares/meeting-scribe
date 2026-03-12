@@ -1,7 +1,7 @@
 import { Plugin, WorkspaceLeaf } from "obsidian";
 import { WSClient } from "./ws-client";
 import { SpeakerStore } from "./speaker-store";
-import { MarkdownWriter } from "./markdown-writer";
+import { VaultManager } from "./vault-manager";
 import {
     MeetingScribeSettingTab,
     DEFAULT_SETTINGS,
@@ -9,11 +9,13 @@ import {
 import type { MeetingScribeSettings } from "./settings";
 import type {
     Segment,
+    ActionItem,
     DiarizationUpdate,
     StatusData,
     AssistantSummary,
     AssistantActionItems,
     AssistantStatus,
+    AssistantTopicChange,
     ServerInfo,
 } from "./types";
 import { TranscriptView, VIEW_TYPE_TRANSCRIPT } from "./transcript-view";
@@ -25,10 +27,13 @@ export default class MeetingScribePlugin extends Plugin {
 
     private wsClient: WSClient;
     private speakerStore: SpeakerStore;
-    private markdownWriter: MarkdownWriter;
+    private vaultManager: VaultManager;
     private interimTimer: ReturnType<typeof setInterval> | null = null;
     private allSegments: Segment[] = [];
     private recordingStartTime = 0;
+    private latestSummary: string | undefined;
+    private latestActionItems: ActionItem[] = [];
+    private latestTopics: string[] = [];
 
     async onload(): Promise<void> {
         console.log("[meeting-scribe] Loading plugin...");
@@ -41,9 +46,9 @@ export default class MeetingScribePlugin extends Plugin {
         } catch (e) {
             console.error("[meeting-scribe] Failed to load speaker store:", e);
         }
-        this.markdownWriter = new MarkdownWriter(
+        this.vaultManager = new VaultManager(
             this.app.vault,
-            this.settings.outputFolder,
+            this.settings.rootFolder,
         );
 
         // Register the transcript view type
@@ -116,14 +121,32 @@ export default class MeetingScribePlugin extends Plugin {
         // Assistant callbacks (Stream 2)
         this.wsClient.onAssistantSummary = (summary: AssistantSummary) => {
             console.log("[meeting-scribe] Assistant summary #" + summary.analysis_number);
+            this.latestSummary = summary.summary;
             const view = this.getTranscriptView();
             view?.updateAssistantSummary(summary);
         };
 
         this.wsClient.onAssistantActionItems = (data: AssistantActionItems) => {
             console.log("[meeting-scribe] Action items:", data.items.length);
+            this.latestActionItems.push(...data.items);
             const view = this.getTranscriptView();
             view?.updateAssistantActionItems(data);
+            if (data.items.length > 0) {
+                this.vaultManager.updateActionTracker(data.items);
+            }
+        };
+
+        this.wsClient.onAssistantTopicChange = (data: AssistantTopicChange) => {
+            console.log("[meeting-scribe] Topic change:", data.topic.new_topic);
+            const view = this.getTranscriptView();
+            view?.updateTopicChange(data);
+            if (data.topic.new_topic) {
+                this.latestTopics.push(data.topic.new_topic);
+                this.vaultManager.upsertTopicNote(
+                    data.topic.new_topic,
+                    `Topic detected during meeting. Previous topic: ${data.topic.previous_topic || 'none'}`,
+                );
+            }
         };
 
         this.wsClient.onAssistantStatus = (status: AssistantStatus) => {
@@ -163,6 +186,7 @@ export default class MeetingScribePlugin extends Plugin {
         await this.saveData(this.settings);
         // Propagate URL changes to the client
         this.wsClient?.setUrl(this.settings.serverUrl);
+        this.vaultManager?.setRootFolder(this.settings.rootFolder);
     }
 
     // ------------------------------------------------------------------
@@ -242,7 +266,7 @@ export default class MeetingScribePlugin extends Plugin {
         this.interimTimer = setInterval(() => {
             if (this.allSegments.length > 0) {
                 const duration = (Date.now() - this.recordingStartTime) / 1000;
-                this.markdownWriter.writeInterim(
+                this.vaultManager.writeInterimMeeting(
                     this.allSegments,
                     duration,
                     this.speakerStore.getAllLabels(),
@@ -263,12 +287,18 @@ export default class MeetingScribePlugin extends Plugin {
     private async finalizeMeeting(): Promise<void> {
         if (this.allSegments.length === 0) return;
         const duration = (Date.now() - this.recordingStartTime) / 1000;
-        const file = await this.markdownWriter.finalize(
+        const file = await this.vaultManager.finalizeMeeting(
             this.allSegments,
             duration,
             this.speakerStore.getAllLabels(),
+            this.latestSummary,
+            this.latestActionItems,
+            this.latestTopics,
         );
         console.log("[meeting-scribe] Transcript saved:", file.path);
         this.allSegments = [];
+        this.latestSummary = undefined;
+        this.latestActionItems = [];
+        this.latestTopics = [];
     }
 }

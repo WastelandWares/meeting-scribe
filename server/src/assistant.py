@@ -17,6 +17,7 @@ from typing import Any, Callable, Awaitable, Optional
 
 from src.models import Segment, WSMessage
 from src.ollama_client import OllamaClient, ChatMessage, ChatResponse
+from src.skills import SkillsLoader, SkillsConfig
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class AssistantConfig:
     window_seconds: float = DEFAULT_WINDOW_SECONDS
     overlap_seconds: float = DEFAULT_OVERLAP_SECONDS
     temperature: float = 0.3
+    skills_path: Optional[str] = None
 
 
 # ── Output Types ─────────────────────────────────────────
@@ -77,11 +79,30 @@ class ActionItem:
         }
 
 
+@dataclass
+class TopicChange:
+    """A detected topic change in the conversation."""
+
+    new_topic: str
+    previous_topic: Optional[str] = None
+    timestamp: float = 0.0
+    confidence: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "new_topic": self.new_topic,
+            "previous_topic": self.previous_topic,
+            "timestamp": self.timestamp,
+            "confidence": self.confidence,
+        }
+
+
 # ── WS Message Types ────────────────────────────────────
 
 WS_MSG_ASSISTANT_SUMMARY = "assistant_summary"
 WS_MSG_ASSISTANT_ACTION_ITEMS = "assistant_action_items"
 WS_MSG_ASSISTANT_STATUS = "assistant_status"
+WS_MSG_ASSISTANT_TOPIC_CHANGE = "assistant_topic_change"
 
 
 # ── Prompts ──────────────────────────────────────────────
@@ -125,6 +146,24 @@ Respond with JSON:
 
 If there are no action items, respond with: {{"action_items": []}}"""
 
+TOPIC_DETECTION_PROMPT_TEMPLATE = """Analyze these transcript segments and identify the current topic of discussion.
+Compare with the previous topic to detect if a topic change occurred.
+
+Previous topic: {previous_topic}
+
+Transcript segments:
+{segments_text}
+
+Respond with JSON:
+{{
+  "current_topic": "A brief (3-8 word) label for the main topic being discussed",
+  "topic_changed": true or false,
+  "confidence": 0.0 to 1.0
+}}
+
+If the conversation is just starting or the topic is unclear, set confidence lower.
+If the topic clearly shifted from the previous one, set topic_changed to true."""
+
 
 # ── Assistant Service ────────────────────────────────────
 
@@ -147,6 +186,13 @@ class Assistant:
             model=config.model,
         )
 
+        # Skills system
+        skills_config = SkillsConfig(
+            user_skills_path=config.skills_path,
+        )
+        self._skills_loader = SkillsLoader(skills_config)
+        self._skills_loader.load()
+
         # Segment accumulator
         self._segments: list[Segment] = []
         self._last_analysis_time: float = 0.0
@@ -155,6 +201,8 @@ class Assistant:
         # Rolling state
         self._previous_summary: str = ""
         self._all_action_items: list[ActionItem] = []
+        self._current_topic: Optional[str] = None
+        self._topic_history: list[TopicChange] = []
 
         # Background processing
         self._analysis_task: Optional[asyncio.Task] = None
@@ -278,12 +326,13 @@ class Assistant:
             # Format segments for the LLM
             segments_text = self._format_segments(window_segments)
 
-            # Run summary and action items in parallel
+            # Run summary, action items, and topic detection in parallel
             summary_coro = self._generate_summary(segments_text, window_start, window_end)
             actions_coro = self._extract_action_items(segments_text)
+            topic_coro = self._detect_topic(segments_text, window_start)
 
-            summary_result, actions_result = await asyncio.gather(
-                summary_coro, actions_coro, return_exceptions=True
+            summary_result, actions_result, topic_result = await asyncio.gather(
+                summary_coro, actions_coro, topic_coro, return_exceptions=True
             )
 
             # Broadcast results
@@ -291,7 +340,7 @@ class Assistant:
                 self._previous_summary = summary_result.summary
                 await self._broadcast(WSMessage(
                     type=WS_MSG_ASSISTANT_SUMMARY,
-                    data=summary_result.to_ws_data(),
+                    data={**summary_result.to_ws_data(), "current_topic": self._current_topic},
                 ))
                 logger.info("Summary broadcast: %s", summary_result.summary[:80])
 
@@ -310,6 +359,18 @@ class Assistant:
             elif isinstance(actions_result, Exception):
                 logger.error("Action item extraction failed: %s", actions_result)
 
+            if isinstance(topic_result, TopicChange):
+                await self._broadcast(WSMessage(
+                    type=WS_MSG_ASSISTANT_TOPIC_CHANGE,
+                    data={
+                        "topic": topic_result.to_dict(),
+                        "all_topics": [t.to_dict() for t in self._topic_history],
+                    },
+                ))
+                logger.info("Topic change: %s -> %s", topic_result.previous_topic, topic_result.new_topic)
+            elif isinstance(topic_result, Exception):
+                logger.error("Topic detection failed: %s", topic_result)
+
             # Advance the window: keep overlap segments for context
             self._last_analysis_time = window_end
             overlap_start = window_end - self._config.overlap_seconds
@@ -319,6 +380,16 @@ class Assistant:
             raise
         except Exception:
             logger.exception("Analysis failed")
+
+    def _get_system_prompt(self) -> str:
+        """Build the full system prompt including loaded skills."""
+        base = SYSTEM_PROMPT
+        skills_addition = self._skills_loader.get_system_prompt_addition()
+        return base + skills_addition
+
+    def get_skills_info(self) -> list[dict]:
+        """Return metadata about loaded skills."""
+        return self._skills_loader.get_skills_info()
 
     def _format_segments(self, segments: list[Segment]) -> str:
         """Format segments into readable text for the LLM."""
@@ -343,7 +414,7 @@ class Assistant:
 
         response = await self._ollama.chat(
             messages=[
-                ChatMessage(role="system", content=SYSTEM_PROMPT),
+                ChatMessage(role="system", content=self._get_system_prompt()),
                 ChatMessage(role="user", content=prompt),
             ],
             temperature=self._config.temperature,
@@ -370,7 +441,7 @@ class Assistant:
 
         response = await self._ollama.chat(
             messages=[
-                ChatMessage(role="system", content=SYSTEM_PROMPT),
+                ChatMessage(role="system", content=self._get_system_prompt()),
                 ChatMessage(role="user", content=prompt),
             ],
             temperature=self._config.temperature,
@@ -388,6 +459,44 @@ class Assistant:
             for item in items
             if item.get("text")
         ]
+
+    async def _detect_topic(self, segments_text: str, window_start: float) -> Optional[TopicChange]:
+        """Detect if the conversation topic has changed."""
+        prompt = TOPIC_DETECTION_PROMPT_TEMPLATE.format(
+            previous_topic=self._current_topic or "(none \u2014 meeting just started)",
+            segments_text=segments_text,
+        )
+
+        response = await self._ollama.chat(
+            messages=[
+                ChatMessage(role="system", content=self._get_system_prompt()),
+                ChatMessage(role="user", content=prompt),
+            ],
+            temperature=self._config.temperature,
+        )
+
+        parsed = self._parse_json_response(response.content)
+        current = parsed.get("current_topic", "")
+        changed = parsed.get("topic_changed", False)
+        confidence = parsed.get("confidence", 0.0)
+
+        if not current:
+            return None
+
+        if changed and self._current_topic:
+            topic_change = TopicChange(
+                new_topic=current,
+                previous_topic=self._current_topic,
+                timestamp=window_start,
+                confidence=confidence,
+            )
+            self._current_topic = current
+            self._topic_history.append(topic_change)
+            return topic_change
+        else:
+            # Update current topic even if no change detected
+            self._current_topic = current
+            return None
 
     @staticmethod
     def _parse_json_response(content: str) -> dict[str, Any]:

@@ -3,6 +3,7 @@ import type {
     AssistantSummary,
     AssistantActionItems,
     AssistantStatus,
+    AssistantTopicChange,
     ActionItem,
     ServerInfo,
     ServerWarning,
@@ -43,6 +44,7 @@ export class TranscriptView extends ItemView {
     private assistantCountdownEl: HTMLElement;
     private summaryEl: HTMLElement;
     private actionItemsEl: HTMLElement;
+    private topicsEl: HTMLElement;
 
     // State
     private speakerColorMap: Map<string, number> = new Map();
@@ -149,6 +151,10 @@ export class TranscriptView extends ItemView {
             cls: "meeting-scribe-action-items",
         });
 
+        this.topicsEl = this.assistantEl.createDiv({
+            cls: "meeting-scribe-topics-section",
+        });
+
         // Hidden until assistant sends first update or server_info arrives
         this.assistantEl.style.display = "none";
 
@@ -232,6 +238,12 @@ export class TranscriptView extends ItemView {
         this.latestActionItems = data.items;
         this.assistantEl.style.display = "";
         this.renderActionItems();
+    }
+
+    /** Show a topic change notification. */
+    updateTopicChange(data: AssistantTopicChange): void {
+        this.assistantEl.style.display = "";
+        this.renderTopics(data);
     }
 
     /** Update the assistant status indicator. */
@@ -588,6 +600,46 @@ export class TranscriptView extends ItemView {
                 li.createSpan({
                     cls: "meeting-scribe-action-assignee",
                     text: ` @${item.assignee}`,
+                });
+            }
+        }
+    }
+
+    private renderTopics(data: AssistantTopicChange): void {
+        if (!this.topicsEl) return;
+
+        while (this.topicsEl.firstChild) {
+            this.topicsEl.removeChild(this.topicsEl.firstChild);
+        }
+
+        this.topicsEl.createEl("h4", { text: "Topics" });
+
+        const currentEl = this.topicsEl.createDiv({
+            cls: "meeting-scribe-current-topic",
+        });
+        currentEl.createSpan({
+            cls: "meeting-scribe-topic-label",
+            text: "Current: ",
+        });
+        currentEl.createSpan({
+            cls: "meeting-scribe-topic-tag",
+            text: data.topic.new_topic,
+        });
+
+        if (data.all_topics.length > 1) {
+            const historyEl = this.topicsEl.createDiv({
+                cls: "meeting-scribe-topic-history",
+            });
+            historyEl.createSpan({
+                cls: "meeting-scribe-topic-label",
+                text: "Previous: ",
+            });
+            // Show last 5 topics in reverse
+            const recent = data.all_topics.slice(-6, -1).reverse();
+            for (const t of recent) {
+                historyEl.createSpan({
+                    cls: "meeting-scribe-topic-tag topic-past",
+                    text: t.new_topic,
                 });
             }
         }
