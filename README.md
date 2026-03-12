@@ -184,7 +184,7 @@ Key test files:
 
 ### Contributing Skills
 
-Add custom skills to `{vault}/Scribe/_assistant/skills/` as markdown files:
+Add custom skills to `{vault-root}/_assistant/skills/` as markdown files (where `{vault-root}` is configured in `config.toml`):
 
 ```markdown
 ---
