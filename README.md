@@ -214,7 +214,6 @@ The assistant is built as a pipeline stage in `server/src/assistant.py`. Key ext
 ## Known Limitations
 
 - Context window limited by model size (mitigated by overlapping windows)
-- Llama 2 models require more VRAM than Phi-4-mini or Qwen3
 - Long sessions (4+ hours) benefit from frontier model (Claude API) for synthesis
 
 ## Troubleshooting
@@ -243,7 +242,7 @@ The assistant is built as a pipeline stage in `server/src/assistant.py`. Key ext
 
 ## License
 
-[Add your license here]
+All rights reserved
 
 ## Support
 
