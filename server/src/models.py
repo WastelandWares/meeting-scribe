@@ -123,6 +123,7 @@ WS_MSG_LABEL_SPEAKER = "label_speaker"
 WS_MSG_ASSISTANT_SUMMARY = "assistant_summary"
 WS_MSG_ASSISTANT_ACTION_ITEMS = "assistant_action_items"
 WS_MSG_ASSISTANT_STATUS = "assistant_status"
+WS_MSG_ASSISTANT_TOPIC_CHANGE = "assistant_topic_change"
 
 
 @dataclass

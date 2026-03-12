@@ -3,14 +3,14 @@ import type MeetingScribePlugin from "./main";
 
 export interface MeetingScribeSettings {
     serverUrl: string;
-    outputFolder: string;
+    rootFolder: string;
     autoStart: boolean;
     whisperModel: string;
 }
 
 export const DEFAULT_SETTINGS: MeetingScribeSettings = {
     serverUrl: "ws://localhost:9876",
-    outputFolder: "Meetings",
+    rootFolder: "Meeting Scribe",
     autoStart: false,
     whisperModel: "base",
 };
@@ -41,14 +41,14 @@ export class MeetingScribeSettingTab extends PluginSettingTab {
             );
 
         new Setting(containerEl)
-            .setName("Output folder")
-            .setDesc("Vault folder where meeting transcripts are saved")
+            .setName("Root folder")
+            .setDesc("Root vault folder for Meeting Scribe (meetings, topics, actions)")
             .addText((text) =>
                 text
-                    .setPlaceholder("Meetings")
-                    .setValue(this.plugin.settings.outputFolder)
+                    .setPlaceholder("Meeting Scribe")
+                    .setValue(this.plugin.settings.rootFolder)
                     .onChange(async (value) => {
-                        this.plugin.settings.outputFolder = value;
+                        this.plugin.settings.rootFolder = value;
                         await this.plugin.saveSettings();
                     })
             );
