@@ -2,7 +2,7 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, ready_for_review, reopened]
 
 jobs:
   claude-review:
@@ -19,6 +19,15 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Record pre-review comment count
+        id: pre-count
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" --paginate --jq 'length')
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+          echo "Pre-review comment count: ${count}"
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
@@ -28,15 +37,35 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Please review this pull request and provide feedback on:
+            Review this pull request. You MUST leave at least one comment on the PR using `gh pr comment`.
+
+            Review criteria:
             - Code quality and best practices
             - Potential bugs or issues
             - Performance considerations
             - Security concerns
             - Test coverage
 
-            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            Use the repository's CLAUDE.md for guidance on style and conventions.
 
-            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+            Format your review as a single comment with:
+            1. A summary line (e.g. "## Code Review — [title]")
+            2. Findings organized by severity (critical > should-fix > nit)
+            3. If no issues found, explicitly state: "No issues found — code looks good."
+
+            You MUST post exactly one `gh pr comment` with your full review. Do not skip this step.
 
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+
+      - name: Verify review comment was posted
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          post_count=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" --paginate --jq 'length')
+          pre_count=${{ steps.pre-count.outputs.count }}
+          echo "Pre-review: ${pre_count} comments, Post-review: ${post_count} comments"
+          if [ "${post_count}" -le "${pre_count}" ]; then
+            echo "::error::Claude Code Review completed but did NOT post a review comment. This means the review silently passed without actually reviewing."
+            exit 1
+          fi
+          echo "Review comment verified — ${post_count} comments (was ${pre_count})"
