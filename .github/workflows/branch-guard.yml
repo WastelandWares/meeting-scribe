@@ -1,0 +1,9 @@
+name: Branch Guard
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  guard:
+    uses: WastelandWares/.github/.github/workflows/branch-guard.yml@main
