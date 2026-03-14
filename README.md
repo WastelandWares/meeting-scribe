@@ -235,7 +235,6 @@ The assistant is built as a pipeline stage in `server/src/assistant.py`. Key ext
 ## Roadmap
 
 - [ ] Claude API escalation for complex synthesis
-- [ ] Gitea/Wekan integration for task tracking
 - [ ] Progressive idea refinement across sessions
 - [ ] Embedding-based topic matching
 - [ ] Multi-language support
