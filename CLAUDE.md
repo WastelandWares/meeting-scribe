@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Meeting Scribe** is a real-time meeting transcription and analysis system combining Python backend audio/AI processing with a TypeScript Obsidian plugin frontend. It captures audio, transcribes via Whisper, identifies speakers with pyannote.audio, and analyzes via local Ollama models with optional Claude API escalation.
 
 **Current Phase**: 4.5 — Assistant integration with topic detection and vault organization
-**Version**: 0.2.0
+**Version**: 0.2.1
 **Architecture**: Dual-stream processing (real-time transcript + batched AI analysis)
 
 ## Quick Start Commands
