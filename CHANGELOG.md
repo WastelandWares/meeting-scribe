@@ -5,6 +5,31 @@ All notable changes to Meeting Scribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-12
+
+### Added
+- **Vault structure and organization** (Issue #20):
+  - VaultManager for automated note creation and updates
+  - Obsidian-native folder structure: meetings, topics, action-items, _assistant
+  - Daily minutes files (never duplicated) with per-session sections
+  - Topic notes with progressive refinement
+  - Automatic action item tracker
+- **Skills system** (Issue #23):
+  - Markdown-based behavioral instructions for assistant learning
+  - Built-in skills: action-tracker, summarizer
+  - User skills support for customization
+  - Skills loader with metadata (source, created date, confidence)
+- **Enhanced topic detection** (Issue #21):
+  - Comprehensive test coverage for topic detection
+  - Integration with vault structure for topic organization
+- **Type system expansion**: Assistant message types for topic changes and note actions
+- **Tests**: Full test suite for topic detection and skills system
+
+### Changed
+- Plugin transcript view now integrates with vault topic organization
+- Assistant workflow now includes vault note creation and updates
+- Skills system enables progressive assistant learning from vault content
+
 ## [0.2.0] - 2026-03-09
 
 ### Added
