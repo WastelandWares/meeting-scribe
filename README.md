@@ -208,7 +208,7 @@ confidence: 0.8
 
 The assistant is built as a pipeline stage in `server/src/assistant.py`. Key extension points:
 
-- **Models**: Add new models in `SkillsLoader`
+- **Models**: Add new models in `assistant.py` model selection logic
 - **Message types**: Extend `models.py` for new WebSocket messages
 - **Analysis**: Enhance processing in `assistant.py`
 
