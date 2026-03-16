@@ -25,10 +25,11 @@ Real-time meeting transcription, analysis, and organization with local AI assist
 ## Quick Start
 
 ### Prerequisites
-- Python 3.9+
-- Node.js 16+ (for Obsidian plugin)
+- Python 3.11+
+- Node.js 18+ (for Obsidian plugin)
 - Ollama (with Phi-4-mini or Qwen3 models)
 - Obsidian 1.5+
+- HuggingFace token (`HF_TOKEN`) for pyannote speaker diarization ([get token](https://huggingface.co/settings/tokens), accept terms for [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0))
 
 ### Installation
 
